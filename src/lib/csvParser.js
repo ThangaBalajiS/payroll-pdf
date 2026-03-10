@@ -18,10 +18,9 @@ function cleanString(val) {
 /**
  * Parse CSV text into employee records with dynamic mapping
  * @param {string} csvText - Raw CSV file text
- * @returns {{ month: string, employees: Array }} parsed data
+ * @returns {{ month: string, employees: Array, headers: string[] }} parsed data
  */
 export function parsePayrollCSV(csvText) {
-  // Parse raw text as array of arrays to handle duplicate headers safely
   const parsed = Papa.parse(csvText, {
     header: false,
     skipEmptyLines: true,
@@ -60,7 +59,7 @@ export function parsePayrollCSV(csvText) {
   const cleanHeaders = rawHeaders.map((h, i) => {
     let base = h ? String(h).trim().replace(/\./g, '_') : '';
     if (!base) base = `Column_${i}`;
-    
+
     if (seenHeaders[base]) {
       let suffix = 2;
       while (seenHeaders[`${base}_${suffix}`]) suffix++;
@@ -77,21 +76,18 @@ export function parsePayrollCSV(csvText) {
     const row = lines[i];
     if (!row || row.length === 0) continue;
 
-    // Create a robust map for this row
     const rowMap = {};
     for (let j = 0; j < cleanHeaders.length; j++) {
       let val = row[j] || '';
-      
-      // Auto-clean numerics for easier usage in PDF math
+
       if (typeof val === 'string' && /^[\s\d,.-]+$/.test(val) && val.trim() !== '') {
         const num = cleanNumber(val);
         if (!isNaN(num)) val = num;
       }
-      
+
       rowMap[cleanHeaders[j]] = val;
     }
 
-    // Skip total rows or empty SL No
     const slNoRaw = rowMap['SL No'] || rowMap['Sl No'] || row[0];
     const slNo = cleanNumber(slNoRaw);
     if (!slNo || slNo === 0) continue;
@@ -99,13 +95,12 @@ export function parsePayrollCSV(csvText) {
     const empName = cleanString(rowMap['Name']);
     if (!empName) continue;
 
-    // Build the employee mapped object
     const employee = {
       slNo: slNo,
       empId: cleanString(rowMap['Emp ID']),
       name: empName,
       netPay: cleanNumber(rowMap['NET PAY'] || rowMap['Net Pay'] || rowMap['NET PAY_2']),
-      csvData: rowMap, // Store the entire dictionary
+      csvData: rowMap,
     };
 
     employees.push(employee);

@@ -10,7 +10,6 @@ function formatCurrency(num) {
   if (isNaN(n)) return '0';
   const s = n.toString();
   if (s.length <= 3) return s;
-  // Indian numbering: last 3, then groups of 2
   let result = s.slice(-3);
   let remaining = s.slice(0, -3);
   while (remaining.length > 2) {
@@ -38,9 +37,6 @@ function formatMonth(monthStr) {
   return monthStr;
 }
 
-/**
- * Helper to safely extract a value from the dynamic csvData map
- */
 function getCsvVal(employee, headerKey) {
   if (!employee || !employee.csvData) return '';
   return employee.csvData[headerKey] || '';
@@ -48,10 +44,6 @@ function getCsvVal(employee, headerKey) {
 
 /**
  * Generate a payslip PDF for an employee
- * @param {Object} employee - Employee data from the database
- * @param {Object} client - Client data (name, address, bankName, payslipConfig)
- * @param {string} month - Month string
- * @returns {jsPDF} PDF document
  */
 export function generatePayslipPDF(employee, client, month) {
   const doc = new jsPDF({
@@ -75,7 +67,7 @@ export function generatePayslipPDF(employee, client, month) {
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   const address = client.address || '';
-  
+
   doc.setDrawColor(0);
   doc.setLineWidth(0.3);
   doc.rect(margin, y - 4, contentWidth, 8);
@@ -94,7 +86,7 @@ export function generatePayslipPDF(employee, client, month) {
   // === Employee Details Table ===
   const detailsData = [];
   let currRow = [];
-  
+
   config.details.forEach((cfg) => {
     currRow.push(cfg.label, String(getCsvVal(employee, cfg.csvHeader)));
     if (currRow.length === 4) {
@@ -102,13 +94,11 @@ export function generatePayslipPDF(employee, client, month) {
       currRow.length = 0;
     }
   });
-  // Pad the last row if uneven
   if (currRow.length > 0) {
     while (currRow.length < 4) currRow.push('');
     detailsData.push([...currRow]);
   }
 
-  // If client has no config yet, fallback
   if (detailsData.length === 0) {
     detailsData.push(['Employee Name', employee.name || '', 'Employee ID', employee.empId || '']);
   }
@@ -138,7 +128,7 @@ export function generatePayslipPDF(employee, client, month) {
   // === Earnings & Deductions ===
   const earningsItems = [];
   let totalGross = 0;
-  
+
   config.earnings.forEach((cfg) => {
     const rawVal = getCsvVal(employee, cfg.csvHeader);
     const numVal = Number(rawVal) || 0;
@@ -148,7 +138,7 @@ export function generatePayslipPDF(employee, client, month) {
 
   const deductionsItems = [];
   let totalDeductions = 0;
-  
+
   config.deductions.forEach((cfg) => {
     const rawVal = getCsvVal(employee, cfg.csvHeader);
     const numVal = Number(rawVal) || 0;
@@ -156,14 +146,11 @@ export function generatePayslipPDF(employee, client, month) {
     deductionsItems.push([cfg.label, formatCurrency(numVal)]);
   });
 
-  // Calculate Net Pay
   const netPay = employee.netPay || (totalGross - totalDeductions);
 
-  // Pad the arrays so they have the same length side-by-side
   const maxRows = Math.max(earningsItems.length, deductionsItems.length);
   const combinedData = [];
 
-  // Table header
   combinedData.push([
     { content: 'EARNINGS', styles: { fontStyle: 'bold', halign: 'center' } },
     { content: 'AMOUNT', styles: { fontStyle: 'bold', halign: 'center' } },
@@ -171,7 +158,6 @@ export function generatePayslipPDF(employee, client, month) {
     { content: 'AMOUNT', styles: { fontStyle: 'bold', halign: 'center' } },
   ]);
 
-  // Table rows
   for (let i = 0; i < maxRows; i++) {
     const earnArr = earningsItems[i] || ['', ''];
     const dedArr = deductionsItems[i] || ['', ''];
@@ -183,7 +169,6 @@ export function generatePayslipPDF(employee, client, month) {
     ]);
   }
 
-  // Totals Row
   combinedData.push([
     { content: 'Gross Salary', styles: { fontStyle: 'bold' } },
     { content: formatCurrency(totalGross), styles: { fontStyle: 'bold', halign: 'right' } },
@@ -191,7 +176,6 @@ export function generatePayslipPDF(employee, client, month) {
     { content: formatCurrency(totalDeductions), styles: { fontStyle: 'bold', halign: 'right' } },
   ]);
 
-  // Net Pay Row
   combinedData.push([
     { content: 'Net Pay', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right' } },
     { content: formatCurrency(netPay), styles: { fontStyle: 'bold', halign: 'right' } },
@@ -225,7 +209,6 @@ export function generatePayslipPDF(employee, client, month) {
   doc.text('Bank Particulars', margin, y + 4);
   y += 6;
 
-  // We look for common bank fields in the CSV instead of hardcoding
   const accNum = getCsvVal(employee, 'Account number') || '';
   const ifsc = getCsvVal(employee, 'IFSC Code') || '';
 
@@ -234,19 +217,19 @@ export function generatePayslipPDF(employee, client, month) {
       { content: 'Bank Name:', styles: { fontStyle: 'bold' } },
       { content: client.bankName || '' },
       { content: 'Date of Payment:', styles: { fontStyle: 'bold' } },
-      { content: '' } // Leave blank
+      { content: '' },
     ],
     [
       { content: 'A/c No:', styles: { fontStyle: 'bold' } },
       { content: accNum },
       { content: 'Net Pay:', styles: { fontStyle: 'bold' } },
-      { content: formatCurrency(netPay) }
+      { content: formatCurrency(netPay) },
     ],
     [
       { content: 'IFSC Code:', styles: { fontStyle: 'bold' } },
       { content: ifsc },
       { content: '', styles: { fontStyle: 'bold' } },
-      { content: '' }
+      { content: '' },
     ],
   ];
 

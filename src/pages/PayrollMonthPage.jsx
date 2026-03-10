@@ -1,12 +1,12 @@
-'use client';
-
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getClient, getPayrollMonth, getEmployees } from '../lib/db';
+import { downloadPayslip } from '../lib/generatePayslip';
 
 export default function PayrollMonthPage() {
   const { id, monthId } = useParams();
-  const router = useRouter();
-  
+  const navigate = useNavigate();
+
   const [client, setClient] = useState(null);
   const [payrollMonth, setPayrollMonth] = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -15,7 +15,7 @@ export default function PayrollMonthPage() {
   const [downloadingAll, setDownloadingAll] = useState(false);
 
   useEffect(() => {
-    fetchData();
+    loadData();
   }, [id, monthId]);
 
   useEffect(() => {
@@ -25,21 +25,15 @@ export default function PayrollMonthPage() {
     }
   }, [toast]);
 
-  async function fetchData() {
+  function loadData() {
     try {
-      const [clientRes, payrollRes] = await Promise.all([
-        fetch(`/api/clients/${id}`),
-        fetch(`/api/clients/${id}/payroll/${monthId}`),
-      ]);
-      
-      if (!clientRes.ok || !payrollRes.ok) throw new Error('Data not found');
-      
-      const clientData = await clientRes.json();
-      const payrollData = await payrollRes.json();
-      
+      const clientData = getClient(id);
+      const monthData = getPayrollMonth(monthId);
+      const empData = getEmployees(monthId);
+
       setClient(clientData);
-      setPayrollMonth(payrollData.payrollMonth);
-      setEmployees(payrollData.employees);
+      setPayrollMonth(monthData);
+      setEmployees(empData);
     } catch (err) {
       setToast({ type: 'error', message: err.message });
     } finally {
@@ -47,10 +41,8 @@ export default function PayrollMonthPage() {
     }
   }
 
-  async function handleDownloadPDF(employee) {
+  function handleDownloadPDF(employee) {
     try {
-      // Dynamic import to keep bundle size small
-      const { downloadPayslip } = await import('@/lib/generatePayslip');
       downloadPayslip(employee, client, payrollMonth.month);
       setToast({ type: 'success', message: `Downloaded payslip for ${employee.name}` });
     } catch (err) {
@@ -62,17 +54,12 @@ export default function PayrollMonthPage() {
   async function handleDownloadAll() {
     setDownloadingAll(true);
     try {
-      const { downloadPayslip } = await import('@/lib/generatePayslip');
-      
       for (let i = 0; i < employees.length; i++) {
         const emp = employees[i];
-        // Skip employees with 0 net pay (not active)
         if (emp.netPay <= 0) continue;
         downloadPayslip(emp, client, payrollMonth.month);
-        // Small delay to prevent browser issues
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise((resolve) => setTimeout(resolve, 300));
       }
-      
       setToast({ type: 'success', message: `Downloaded ${employees.length} payslips` });
     } catch (err) {
       setToast({ type: 'error', message: 'Failed to download all payslips' });
@@ -105,7 +92,7 @@ export default function PayrollMonthPage() {
       <div className="empty-state">
         <div className="empty-icon">❌</div>
         <h3>Data not found</h3>
-        <button className="btn btn-primary" onClick={() => router.push('/')}>Go Back</button>
+        <button className="btn btn-primary" onClick={() => navigate('/')}>Go Back</button>
       </div>
     );
   }
@@ -114,9 +101,9 @@ export default function PayrollMonthPage() {
     <>
       {/* Breadcrumb */}
       <div className="breadcrumb">
-        <a href="/">Clients</a>
+        <Link to="/">Clients</Link>
         <span className="separator">›</span>
-        <a href={`/clients/${id}`}>{client.name}</a>
+        <Link to={`/clients/${id}`}>{client.name}</Link>
         <span className="separator">›</span>
         <span className="current">{payrollMonth.month}</span>
       </div>
@@ -173,7 +160,7 @@ export default function PayrollMonthPage() {
             </thead>
             <tbody>
               {employees.map((emp) => (
-                <tr key={emp._id}>
+                <tr key={emp.id}>
                   <td>{emp.slNo}</td>
                   <td>
                     <span className="badge badge-accent">{emp.empId}</span>

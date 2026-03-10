@@ -1,13 +1,13 @@
-'use client';
-
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getClient, getPayrollMonths, createOrUpdatePayrollMonth, deletePayrollMonth } from '../lib/db';
+import { parsePayrollCSV } from '../lib/csvParser';
 
 export default function ClientDetailPage() {
   const { id } = useParams();
-  const router = useRouter();
+  const navigate = useNavigate();
   const fileInputRef = useRef(null);
-  
+
   const [client, setClient] = useState(null);
   const [payrollMonths, setPayrollMonths] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,8 +17,7 @@ export default function ClientDetailPage() {
   const [monthInput, setMonthInput] = useState('');
 
   useEffect(() => {
-    fetchClient();
-    fetchPayrollMonths();
+    loadData();
   }, [id]);
 
   useEffect(() => {
@@ -28,12 +27,12 @@ export default function ClientDetailPage() {
     }
   }, [toast]);
 
-  async function fetchClient() {
+  function loadData() {
     try {
-      const res = await fetch(`/api/clients/${id}`);
-      if (!res.ok) throw new Error('Client not found');
-      const data = await res.json();
-      setClient(data);
+      const clientData = getClient(id);
+      setClient(clientData);
+      const months = getPayrollMonths(id);
+      setPayrollMonths(months);
     } catch (err) {
       setToast({ type: 'error', message: err.message });
     } finally {
@@ -41,40 +40,36 @@ export default function ClientDetailPage() {
     }
   }
 
-  async function fetchPayrollMonths() {
-    try {
-      const res = await fetch(`/api/clients/${id}/payroll`);
-      const data = await res.json();
-      setPayrollMonths(data);
-    } catch (err) {
-      console.error('Failed to fetch payroll months:', err);
-    }
-  }
-
-  async function handleUpload(file) {
+  function handleUpload(file) {
     if (!file) return;
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (monthInput) {
-        formData.append('month', monthInput);
-      }
-      
-      const res = await fetch(`/api/clients/${id}/payroll`, {
-        method: 'POST',
-        body: formData,
-      });
-      
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Upload failed');
-      
-      setToast({ type: 'success', message: data.message });
-      setMonthInput('');
-      fetchPayrollMonths();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const csvText = e.target.result;
+          const { month: parsedMonth, employees, headers } = parsePayrollCSV(csvText);
+          const finalMonth = monthInput || parsedMonth || 'Unknown';
+
+          const result = createOrUpdatePayrollMonth(id, finalMonth, employees, headers);
+          setToast({ type: 'success', message: result.message });
+          setMonthInput('');
+          // Reload client to get updated lastCsvHeaders
+          setClient(getClient(id));
+          setPayrollMonths(getPayrollMonths(id));
+        } catch (err) {
+          setToast({ type: 'error', message: err.message });
+        } finally {
+          setUploading(false);
+        }
+      };
+      reader.onerror = () => {
+        setToast({ type: 'error', message: 'Failed to read file' });
+        setUploading(false);
+      };
+      reader.readAsText(file);
     } catch (err) {
       setToast({ type: 'error', message: err.message });
-    } finally {
       setUploading(false);
     }
   }
@@ -96,6 +91,19 @@ export default function ClientDetailPage() {
     e.target.value = '';
   }
 
+  function handleDeleteMonth(e, monthId) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this payroll month?')) return;
+    try {
+      deletePayrollMonth(monthId);
+      setToast({ type: 'success', message: 'Payroll month deleted' });
+      setPayrollMonths(getPayrollMonths(id));
+    } catch (err) {
+      setToast({ type: 'error', message: 'Failed to delete payroll month' });
+    }
+  }
+
   if (loading) {
     return (
       <div className="loading-screen">
@@ -110,7 +118,7 @@ export default function ClientDetailPage() {
       <div className="empty-state">
         <div className="empty-icon">❌</div>
         <h3>Client not found</h3>
-        <button className="btn btn-primary" onClick={() => router.push('/')}>Go Back</button>
+        <button className="btn btn-primary" onClick={() => navigate('/')}>Go Back</button>
       </div>
     );
   }
@@ -119,7 +127,7 @@ export default function ClientDetailPage() {
     <>
       {/* Breadcrumb */}
       <div className="breadcrumb">
-        <a href="/">Clients</a>
+        <Link to="/">Clients</Link>
         <span className="separator">›</span>
         <span className="current">{client.name}</span>
       </div>
@@ -130,7 +138,7 @@ export default function ClientDetailPage() {
           <h1>{client.name}</h1>
           <p className="subtitle">{client.address}</p>
         </div>
-        <button className="btn btn-secondary" onClick={() => router.push(`/clients/${id}/edit`)}>
+        <button className="btn btn-secondary" onClick={() => navigate(`/clients/${id}/edit`)}>
           ⚙️ Edit & Configure
         </button>
       </div>
@@ -158,7 +166,7 @@ export default function ClientDetailPage() {
         <div className="section-header">
           <h2>Upload Payroll CSV</h2>
         </div>
-        
+
         <div style={{ marginBottom: 16 }}>
           <div className="form-group" style={{ maxWidth: 300 }}>
             <label>Month Name (optional, auto-detected from CSV)</label>
@@ -217,9 +225,9 @@ export default function ClientDetailPage() {
         ) : (
           <div className="payroll-months-list">
             {payrollMonths.map((pm) => (
-              <a
-                key={pm._id}
-                href={`/clients/${id}/payroll/${pm._id}`}
+              <Link
+                key={pm.id}
+                to={`/clients/${id}/payroll/${pm.id}`}
                 className="payroll-month-item"
               >
                 <div className="payroll-month-info">
@@ -228,7 +236,7 @@ export default function ClientDetailPage() {
                     <div className="payroll-month-name">{pm.month}</div>
                     <div className="payroll-month-meta">
                       {pm.employeeCount} employees • Uploaded {new Date(pm.createdAt).toLocaleDateString('en-IN', {
-                        day: 'numeric', month: 'short', year: 'numeric'
+                        day: 'numeric', month: 'short', year: 'numeric',
                       })}
                     </div>
                   </div>
@@ -237,13 +245,13 @@ export default function ClientDetailPage() {
                   <button
                     className="btn-icon"
                     title="Delete month"
-                    onClick={(e) => handleDeleteMonth(e, pm._id)}
+                    onClick={(e) => handleDeleteMonth(e, pm.id)}
                   >
                     🗑️
                   </button>
                   <span className="payroll-month-arrow">→</span>
                 </div>
-              </a>
+              </Link>
             ))}
           </div>
         )}

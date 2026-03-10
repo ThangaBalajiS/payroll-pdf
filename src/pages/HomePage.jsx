@@ -1,7 +1,6 @@
-'use client';
-
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router-dom';
+import { getClients, createClient, deleteClient } from '../lib/db';
 
 export default function HomePage() {
   const [clients, setClients] = useState([]);
@@ -10,10 +9,10 @@ export default function HomePage() {
   const [formData, setFormData] = useState({ name: '', address: '', bankName: '' });
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const router = useRouter();
+  const navigate = useNavigate();
 
   useEffect(() => {
-    fetchClients();
+    loadClients();
   }, []);
 
   useEffect(() => {
@@ -23,10 +22,9 @@ export default function HomePage() {
     }
   }, [toast]);
 
-  async function fetchClients() {
+  function loadClients() {
     try {
-      const res = await fetch('/api/clients');
-      const data = await res.json();
+      const data = getClients();
       setClients(data);
     } catch (err) {
       setToast({ type: 'error', message: 'Failed to load clients' });
@@ -35,20 +33,15 @@ export default function HomePage() {
     }
   }
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch('/api/clients', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      if (!res.ok) throw new Error('Failed to create client');
+      createClient(formData);
       setToast({ type: 'success', message: 'Client added successfully!' });
       setShowModal(false);
       setFormData({ name: '', address: '', bankName: '' });
-      fetchClients();
+      loadClients();
     } catch (err) {
       setToast({ type: 'error', message: err.message });
     } finally {
@@ -56,13 +49,13 @@ export default function HomePage() {
     }
   }
 
-  async function handleDelete(e, clientId) {
+  function handleDelete(e, clientId) {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this client?')) return;
     try {
-      await fetch(`/api/clients/${clientId}`, { method: 'DELETE' });
+      deleteClient(clientId);
       setToast({ type: 'success', message: 'Client deleted' });
-      fetchClients();
+      loadClients();
     } catch (err) {
       setToast({ type: 'error', message: 'Failed to delete client' });
     }
@@ -98,9 +91,9 @@ export default function HomePage() {
         <div className="cards-grid">
           {clients.map((client) => (
             <div
-              key={client._id}
+              key={client.id}
               className="card card-clickable"
-              onClick={() => router.push(`/clients/${client._id}`)}
+              onClick={() => navigate(`/clients/${client.id}`)}
             >
               <div className="card-title">{client.name}</div>
               <div className="card-subtitle">{client.address}</div>
@@ -114,7 +107,7 @@ export default function HomePage() {
                   <span>Added</span>
                   <span className="value">
                     {new Date(client.createdAt).toLocaleDateString('en-IN', {
-                      day: 'numeric', month: 'short', year: 'numeric'
+                      day: 'numeric', month: 'short', year: 'numeric',
                     })}
                   </span>
                 </div>
@@ -122,7 +115,7 @@ export default function HomePage() {
                 <button
                   className="btn-icon"
                   title="Delete client"
-                  onClick={(e) => handleDelete(e, client._id)}
+                  onClick={(e) => handleDelete(e, client.id)}
                 >
                   🗑️
                 </button>

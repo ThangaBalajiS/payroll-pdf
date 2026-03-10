@@ -1,11 +1,10 @@
-'use client';
-
 import { useState, useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getClient, updateClient } from '../lib/db';
 
 export default function EditClientPage() {
   const { id } = useParams();
-  const router = useRouter();
+  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -20,11 +19,11 @@ export default function EditClientPage() {
       details: [],
       earnings: [],
       deductions: [],
-    }
+    },
   });
 
   useEffect(() => {
-    fetchClient();
+    loadClient();
   }, [id]);
 
   useEffect(() => {
@@ -34,19 +33,21 @@ export default function EditClientPage() {
     }
   }, [toast]);
 
-  async function fetchClient() {
+  function loadClient() {
     try {
-      const res = await fetch(`/api/clients/${id}`);
-      if (!res.ok) throw new Error('Client not found');
-      const data = await res.json();
+      const data = getClient(id);
+      if (!data) {
+        setToast({ type: 'error', message: 'Client not found' });
+        return;
+      }
       setForm({
         name: data.name || '',
         address: data.address || '',
         bankName: data.bankName || '',
         lastCsvHeaders: data.lastCsvHeaders || [],
         payslipConfig: data.payslipConfig || {
-          details: [], earnings: [], deductions: []
-        }
+          details: [], earnings: [], deductions: [],
+        },
       });
     } catch (err) {
       setToast({ type: 'error', message: err.message });
@@ -55,18 +56,18 @@ export default function EditClientPage() {
     }
   }
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     if (e) e.preventDefault();
     setSaving(true);
     try {
-      const res = await fetch(`/api/clients/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+      updateClient(id, {
+        name: form.name,
+        address: form.address,
+        bankName: form.bankName,
+        payslipConfig: form.payslipConfig,
       });
-      if (!res.ok) throw new Error('Failed to update client');
       setToast({ type: 'success', message: 'Client configuration saved successfully!' });
-      setTimeout(() => router.push(`/clients/${id}`), 1000);
+      setTimeout(() => navigate(`/clients/${id}`), 1000);
     } catch (err) {
       setToast({ type: 'error', message: err.message });
     } finally {
@@ -76,32 +77,33 @@ export default function EditClientPage() {
 
   function handleConfigChange(category, index, field, value) {
     const newConfig = { ...form.payslipConfig };
-    newConfig[category][index][field] = value;
+    newConfig[category] = [...newConfig[category]];
+    newConfig[category][index] = { ...newConfig[category][index], [field]: value };
     setForm({ ...form, payslipConfig: newConfig });
   }
 
   function handleAddField(category) {
     const newConfig = { ...form.payslipConfig };
-    newConfig[category].push({ label: '', csvHeader: '' });
+    newConfig[category] = [...newConfig[category], { label: '', csvHeader: '' }];
     setForm({ ...form, payslipConfig: newConfig });
   }
 
   function handleRemoveField(category, index) {
     const newConfig = { ...form.payslipConfig };
-    newConfig[category].splice(index, 1);
+    newConfig[category] = newConfig[category].filter((_, i) => i !== index);
     setForm({ ...form, payslipConfig: newConfig });
   }
 
   function renderConfigSection(title, category, description) {
     const items = form.payslipConfig[category] || [];
-    
+
     return (
       <div className="section" style={{ marginTop: 24 }}>
         <div className="section-header" style={{ marginBottom: 12 }}>
           <h3>{title}</h3>
         </div>
         <p className="subtitle" style={{ marginBottom: 16 }}>{description}</p>
-        
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {items.map((item, idx) => (
             <div key={idx} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -125,10 +127,9 @@ export default function EditClientPage() {
                     required
                   >
                     <option value="" disabled>Select CSV Column</option>
-                    {form.lastCsvHeaders.map(header => (
+                    {form.lastCsvHeaders.map((header) => (
                       <option key={header} value={header}>{header}</option>
                     ))}
-                    {/* Fallback if the saved header isn't in the newly uploaded list */}
                     {item.csvHeader && !form.lastCsvHeaders.includes(item.csvHeader) && (
                       <option value={item.csvHeader}>{item.csvHeader} (Missing)</option>
                     )}
@@ -149,13 +150,12 @@ export default function EditClientPage() {
                 className="btn-icon"
                 onClick={() => handleRemoveField(category, idx)}
                 title="Remove field"
-                style={{ background: 'var(--bg-glass)', border: '1px solid var(--border-glass)' }}
               >
                 🗑️
               </button>
             </div>
           ))}
-          
+
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -182,9 +182,9 @@ export default function EditClientPage() {
     <>
       {/* Breadcrumb */}
       <div className="breadcrumb">
-        <a href="/">Clients</a>
+        <Link to="/">Clients</Link>
         <span className="separator">›</span>
-        <a href={`/clients/${id}`}>{form.name || 'Client'}</a>
+        <Link to={`/clients/${id}`}>{form.name || 'Client'}</Link>
         <span className="separator">›</span>
         <span className="current">Edit & Configure</span>
       </div>
@@ -234,11 +234,11 @@ export default function EditClientPage() {
         <div className="section" style={{ marginTop: 32 }}>
           <h2>Payslip Configurations</h2>
           <p className="subtitle">Map the columns from your uploaded CSV to the fields displayed on the generated PDF Payslip.</p>
-          
+
           {renderConfigSection('Employee Details Grid', 'details', 'Shown at the top of the payslip grid (4 columns). Keep to an even number for best layout.')}
-          
+
           {renderConfigSection('Earnings', 'earnings', 'Listed on the left side. These will be summed to calculate Total Gross Salary.')}
-          
+
           {renderConfigSection('Deductions', 'deductions', 'Listed on the right side. These will be summed to calculate Total Deductions.')}
         </div>
 
@@ -246,7 +246,7 @@ export default function EditClientPage() {
           <button type="submit" className="btn btn-primary" disabled={saving}>
             {saving ? 'Saving...' : 'Save Configuration'}
           </button>
-          <button type="button" className="btn btn-secondary" onClick={() => router.push(`/clients/${id}`)}>
+          <button type="button" className="btn btn-secondary" onClick={() => navigate(`/clients/${id}`)}>
             Cancel
           </button>
         </div>
