@@ -15,6 +15,8 @@ export default function EditClientPage() {
     address: '',
     bankName: '',
     lastCsvHeaders: [],
+    amountColumns: [],
+    signatureImage: null,
     payslipConfig: {
       details: [],
       earnings: [],
@@ -45,6 +47,8 @@ export default function EditClientPage() {
         address: data.address || '',
         bankName: data.bankName || '',
         lastCsvHeaders: data.lastCsvHeaders || [],
+        amountColumns: data.amountColumns || [],
+        signatureImage: data.signatureImage || null,
         payslipConfig: data.payslipConfig || {
           details: [], earnings: [], deductions: [],
         },
@@ -64,7 +68,9 @@ export default function EditClientPage() {
         name: form.name,
         address: form.address,
         bankName: form.bankName,
+        signatureImage: form.signatureImage,
         payslipConfig: form.payslipConfig,
+        amountColumns: form.amountColumns,
       });
       setToast({ type: 'success', message: 'Client configuration saved successfully!' });
       setTimeout(() => navigate(`/clients/${id}`), 1000);
@@ -72,6 +78,25 @@ export default function EditClientPage() {
       setToast({ type: 'error', message: err.message });
     } finally {
       setSaving(false);
+    }
+  }
+
+  function handleSignatureUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setForm({ ...form, signatureImage: event.target.result });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function handleAmountColumnToggle(header) {
+    const current = form.amountColumns || [];
+    if (current.includes(header)) {
+      setForm({ ...form, amountColumns: current.filter(h => h !== header) });
+    } else {
+      setForm({ ...form, amountColumns: [...current, header] });
     }
   }
 
@@ -228,6 +253,21 @@ export default function EditClientPage() {
               onChange={(e) => setForm({ ...form, bankName: e.target.value })}
             />
           </div>
+          <div className="form-group" style={{ marginTop: 16 }}>
+            <label>Employer Signature Image</label>
+            <input
+              type="file"
+              accept="image/*"
+              className="form-control"
+              onChange={handleSignatureUpload}
+            />
+            {form.signatureImage && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center' }}>
+                <img src={form.signatureImage} alt="Signature Preview" style={{ maxHeight: 60, border: '1px solid var(--border-color)', borderRadius: 4 }} />
+                <button type="button" className="btn-icon" onClick={() => setForm({ ...form, signatureImage: null })} style={{ marginLeft: 12 }} title="Remove image">🗑️</button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Payslip Configuration */}
@@ -241,6 +281,26 @@ export default function EditClientPage() {
 
           {renderConfigSection('Deductions', 'deductions', 'Listed on the right side. These will be summed to calculate Total Deductions.')}
         </div>
+
+        {/* Amount Columns Configuration */}
+        {form.lastCsvHeaders && form.lastCsvHeaders.length > 0 && (
+          <div className="section" style={{ marginTop: 32 }}>
+            <h2>Amount Columns (₹)</h2>
+            <p className="subtitle">Select which CSV columns represent monetary amounts. These will be formatted with the ₹ symbol in the table and used for summary totals.</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, marginTop: 16 }}>
+              {form.lastCsvHeaders.map(col => (
+                <label key={col} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={(form.amountColumns || []).includes(col)}
+                    onChange={() => handleAmountColumnToggle(col)}
+                  />
+                  <span>{col.replace(/_/g, ' ')}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div style={{ marginTop: 32, display: 'flex', gap: 16 }}>
           <button type="submit" className="btn btn-primary" disabled={saving}>

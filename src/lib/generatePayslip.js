@@ -100,7 +100,13 @@ export function generatePayslipPDF(employee, client, month) {
   }
 
   if (detailsData.length === 0) {
-    detailsData.push(['Employee Name', employee.name || '', 'Employee ID', employee.empId || '']);
+    const fallbackRow = ['Employee Name', employee.name || ''];
+    if (employee.empId) {
+      fallbackRow.push('Employee ID', employee.empId);
+    } else {
+      fallbackRow.push('', '');
+    }
+    detailsData.push(fallbackRow);
   }
 
   autoTable(doc, {
@@ -203,62 +209,95 @@ export function generatePayslipPDF(employee, client, month) {
 
   y = doc.lastAutoTable.finalY + 5;
 
-  // === Bank Particulars ===
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Bank Particulars', margin, y + 4);
-  y += 6;
+  // === Bank Particulars (only if CSV has bank data or client has bank name) ===
+  const accNum = getCsvVal(employee, 'Account number') || getCsvVal(employee, 'Account_number') || '';
+  const ifsc = getCsvVal(employee, 'IFSC Code') || getCsvVal(employee, 'IFSC_Code') || '';
+  const hasBankInfo = accNum || ifsc || client.bankName;
 
-  const accNum = getCsvVal(employee, 'Account number') || '';
-  const ifsc = getCsvVal(employee, 'IFSC Code') || '';
+  if (hasBankInfo) {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Bank Particulars', margin, y + 4);
+    y += 6;
 
-  const bankData = [
-    [
-      { content: 'Bank Name:', styles: { fontStyle: 'bold' } },
-      { content: client.bankName || '' },
-      { content: 'Date of Payment:', styles: { fontStyle: 'bold' } },
-      { content: '' },
-    ],
-    [
-      { content: 'A/c No:', styles: { fontStyle: 'bold' } },
-      { content: accNum },
-      { content: 'Net Pay:', styles: { fontStyle: 'bold' } },
-      { content: formatCurrency(netPay) },
-    ],
-    [
-      { content: 'IFSC Code:', styles: { fontStyle: 'bold' } },
-      { content: ifsc },
-      { content: '', styles: { fontStyle: 'bold' } },
-      { content: '' },
-    ],
-  ];
+    const bankData = [
+      [
+        { content: 'Bank Name:', styles: { fontStyle: 'bold' } },
+        { content: client.bankName || '' },
+        { content: 'Date of Payment:', styles: { fontStyle: 'bold' } },
+        { content: '' },
+      ],
+      [
+        { content: 'A/c No:', styles: { fontStyle: 'bold' } },
+        { content: accNum },
+        { content: 'Net Pay:', styles: { fontStyle: 'bold' } },
+        { content: formatCurrency(netPay) },
+      ],
+      [
+        { content: 'IFSC Code:', styles: { fontStyle: 'bold' } },
+        { content: ifsc },
+        { content: '', styles: { fontStyle: 'bold' } },
+        { content: '' },
+      ],
+    ];
 
-  autoTable(doc, {
-    startY: y,
-    body: bankData,
-    theme: 'grid',
-    styles: {
-      fontSize: 8,
-      cellPadding: 2,
-      lineColor: [0, 0, 0],
-      lineWidth: 0.3,
-    },
-    columnStyles: {
-      0: { cellWidth: contentWidth * 0.2 },
-      1: { cellWidth: contentWidth * 0.3 },
-      2: { cellWidth: contentWidth * 0.2 },
-      3: { cellWidth: contentWidth * 0.3 },
-    },
-    margin: { left: margin, right: margin },
-    tableWidth: contentWidth,
-  });
+    autoTable(doc, {
+      startY: y,
+      body: bankData,
+      theme: 'grid',
+      styles: {
+        fontSize: 8,
+        cellPadding: 2,
+        lineColor: [0, 0, 0],
+        lineWidth: 0.3,
+      },
+      columnStyles: {
+        0: { cellWidth: contentWidth * 0.2 },
+        1: { cellWidth: contentWidth * 0.3 },
+        2: { cellWidth: contentWidth * 0.2 },
+        3: { cellWidth: contentWidth * 0.3 },
+      },
+      margin: { left: margin, right: margin },
+      tableWidth: contentWidth,
+    });
 
-  y = doc.lastAutoTable.finalY + 15;
+    y = doc.lastAutoTable.finalY + 15;
+  } else {
+    y += 10;
+  }
 
   // === Footer Signature ===
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.text('This is system generated Payslip signature not required.', margin, y);
+
+  if (client.signatureImage) {
+    try {
+      const imgProps = doc.getImageProperties(client.signatureImage);
+      const aspectRatio = imgProps.width / imgProps.height;
+      
+      const maxWidth = 40;
+      const maxHeight = 15;
+      
+      let sigWidth = maxWidth;
+      let sigHeight = sigWidth / aspectRatio;
+      
+      if (sigHeight > maxHeight) {
+        sigHeight = maxHeight;
+        sigWidth = sigHeight * aspectRatio;
+      }
+
+      doc.addImage(
+        client.signatureImage,
+        pageWidth - margin - sigWidth,
+        y - sigHeight - 2,
+        sigWidth,
+        sigHeight
+      );
+    } catch (err) {
+      console.error('Failed to render signature image:', err);
+    }
+  }
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');

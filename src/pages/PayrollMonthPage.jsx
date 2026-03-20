@@ -78,6 +78,35 @@ export default function PayrollMonthPage() {
     return emp.csvData?.[key] || 0;
   }
 
+  /**
+   * Determine which CSV headers to show as columns in the table.
+   * Skip the first column (usually serial no) and the name column.
+   * Only show columns that have at least one numeric value across employees.
+   */
+  function getDisplayColumns() {
+    const headers = payrollMonth?.headers || [];
+    if (headers.length === 0) return [];
+
+    // Identify which headers are numeric (have at least one numeric value)
+    return headers.filter((header) => {
+      // Skip columns that seem like serial numbers or names
+      const lower = header.toLowerCase().replace(/[\s_]/g, '');
+      if (['slno', 'sno', 'column_0'].includes(lower)) return false;
+      if (['name', 'empname', 'employeename'].includes(lower)) return false;
+      if (['empid', 'employeeid', 'id'].includes(lower)) return false;
+
+      return true;
+    });
+  }
+
+  /**
+   * Check if a column should be displayed as a currency amount
+   */
+  function isAmountColumn(header) {
+    const amountCols = client?.amountColumns || [];
+    return amountCols.includes(header);
+  }
+
   if (loading) {
     return (
       <div className="loading-screen">
@@ -96,6 +125,11 @@ export default function PayrollMonthPage() {
       </div>
     );
   }
+
+  const displayColumns = getDisplayColumns();
+
+  // For summary cards, pick columns marked as amounts
+  const amountSummaryCols = displayColumns.filter(isAmountColumn);
 
   return (
     <>
@@ -145,16 +179,17 @@ export default function PayrollMonthPage() {
             <thead>
               <tr>
                 <th>S.No</th>
-                <th>Emp ID</th>
+                {employees[0]?.empId && <th>Emp ID</th>}
                 <th>Name</th>
-                <th style={{ textAlign: 'right' }}>Basic + DA</th>
-                <th style={{ textAlign: 'right' }}>HRA</th>
-                <th style={{ textAlign: 'right' }}>Gross</th>
-                <th style={{ textAlign: 'right' }}>PF</th>
-                <th style={{ textAlign: 'right' }}>ESI</th>
+                {displayColumns.map((col) => (
+                  <th
+                    key={col}
+                    style={isAmountColumn(col) ? { textAlign: 'right' } : undefined}
+                  >
+                    {col.replace(/_/g, ' ')}
+                  </th>
+                ))}
                 <th style={{ textAlign: 'right' }}>Net Pay</th>
-                <th>Days</th>
-                <th>LOP</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -162,30 +197,29 @@ export default function PayrollMonthPage() {
               {employees.map((emp) => (
                 <tr key={emp.id}>
                   <td>{emp.slNo}</td>
-                  <td>
-                    <span className="badge badge-accent">{emp.empId}</span>
-                  </td>
+                  {employees[0]?.empId && (
+                    <td>
+                      <span className="badge badge-accent">{emp.empId}</span>
+                    </td>
+                  )}
                   <td style={{ fontWeight: 500 }}>{emp.name}</td>
-                  <td style={{ textAlign: 'right' }} className="amount">
-                    {formatCurrency(getVal(emp, 'Basic+DA_2'))}
-                  </td>
-                  <td style={{ textAlign: 'right' }} className="amount">
-                    {formatCurrency(getVal(emp, 'HRA_2'))}
-                  </td>
-                  <td style={{ textAlign: 'right' }} className="amount">
-                    {formatCurrency(getVal(emp, 'Gross _2'))}
-                  </td>
-                  <td style={{ textAlign: 'right' }} className="amount">
-                    {formatCurrency(getVal(emp, 'P.F.'))}
-                  </td>
-                  <td style={{ textAlign: 'right' }} className="amount">
-                    {formatCurrency(getVal(emp, 'E.S.I'))}
-                  </td>
+                  {displayColumns.map((col) => {
+                    const val = getVal(emp, col);
+                    const isNum = typeof val === 'number';
+                    const isAmt = isAmountColumn(col);
+                    return (
+                      <td
+                        key={col}
+                        style={isAmt ? { textAlign: 'right' } : undefined}
+                        className={isAmt ? 'amount' : undefined}
+                      >
+                        {isAmt && isNum ? formatCurrency(val) : val}
+                      </td>
+                    );
+                  })}
                   <td style={{ textAlign: 'right' }} className="amount amount-positive">
                     <strong>{formatCurrency(emp.netPay)}</strong>
                   </td>
-                  <td>{getVal(emp, 'attend')}</td>
-                  <td>{getVal(emp, 'LOP') > 0 ? <span style={{ color: 'var(--danger)' }}>{getVal(emp, 'LOP')}</span> : '0'}</td>
                   <td>
                     <button
                       className="btn btn-sm btn-secondary"
@@ -201,22 +235,21 @@ export default function PayrollMonthPage() {
         </div>
       </div>
 
+      {/* Summary Cards — dynamic from numeric columns */}
       <div className="client-info" style={{ marginTop: 32 }}>
-        <div className="client-info-card">
-          <div className="label">Total Gross</div>
-          <div className="value amount">{formatCurrency(employees.reduce((s, e) => s + (getVal(e, 'Gross _2') || 0), 0))}</div>
-        </div>
-        <div className="client-info-card">
-          <div className="label">Total PF</div>
-          <div className="value amount">{formatCurrency(employees.reduce((s, e) => s + (getVal(e, 'P.F.') || 0), 0))}</div>
-        </div>
-        <div className="client-info-card">
-          <div className="label">Total ESI</div>
-          <div className="value amount">{formatCurrency(employees.reduce((s, e) => s + (getVal(e, 'E.S.I') || 0), 0))}</div>
-        </div>
+        {amountSummaryCols.slice(0, 6).map((col) => (
+          <div className="client-info-card" key={col}>
+            <div className="label">Total {col.replace(/_/g, ' ')}</div>
+            <div className="value amount">
+              {formatCurrency(employees.reduce((s, e) => s + (Number(getVal(e, col)) || 0), 0))}
+            </div>
+          </div>
+        ))}
         <div className="client-info-card">
           <div className="label">Total Net Pay</div>
-          <div className="value amount amount-positive">{formatCurrency(employees.reduce((s, e) => s + (e.netPay || 0), 0))}</div>
+          <div className="value amount amount-positive">
+            {formatCurrency(employees.reduce((s, e) => s + (e.netPay || 0), 0))}
+          </div>
         </div>
       </div>
 

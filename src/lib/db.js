@@ -3,6 +3,8 @@
  * Replaces MongoDB with simple JSON persistence.
  */
 
+import { autoConfigurePayslip } from './csvParser';
+
 const STORAGE_KEY = 'asn_payslip_data';
 
 function getData() {
@@ -42,30 +44,13 @@ export function createClient({ name, address, bankName }) {
     name: name.trim(),
     address: address.trim(),
     bankName: (bankName || '').trim(),
+    signatureImage: null,
     lastCsvHeaders: [],
+    amountColumns: [],
     payslipConfig: {
-      details: [
-        { label: 'Employee Name', csvHeader: 'Name' },
-        { label: 'Employee ID', csvHeader: 'Emp ID' },
-        { label: 'Designation', csvHeader: 'Designation' },
-        { label: 'Date of Joining', csvHeader: 'DOJ' },
-        { label: 'Days Paid', csvHeader: 'attend' },
-        { label: 'UAN NO', csvHeader: 'UAN Number' },
-        { label: 'Loss of Pay', csvHeader: 'LOP' },
-        { label: 'ESIC NO', csvHeader: 'ESIC Number' },
-      ],
-      earnings: [
-        { label: 'Basic', csvHeader: 'Basic+DA_2' },
-        { label: 'HRA', csvHeader: 'HRA_2' },
-        { label: 'Transport Allowance', csvHeader: 'CONV_' },
-        { label: 'Other Pay', csvHeader: 'OT' },
-        { label: 'Incentive', csvHeader: 'FOOD ALLOWANCE' },
-      ],
-      deductions: [
-        { label: 'Provident Fund', csvHeader: 'P_F_' },
-        { label: 'ESI', csvHeader: 'E_S_I' },
-        { label: 'Other Deduction', csvHeader: 'ADV' },
-      ],
+      details: [],
+      earnings: [],
+      deductions: [],
     },
     createdAt: new Date().toISOString(),
   };
@@ -121,6 +106,18 @@ export function createOrUpdatePayrollMonth(clientId, month, employees, headers) 
     const clientIdx = data.clients.findIndex(c => c.id === clientId);
     if (clientIdx !== -1) {
       data.clients[clientIdx].lastCsvHeaders = headers;
+
+      // Auto-configure payslipConfig if it's empty (first upload)
+      const cfg = data.clients[clientIdx].payslipConfig || { details: [], earnings: [], deductions: [] };
+      const isEmpty = (!cfg.details || cfg.details.length === 0)
+        && (!cfg.earnings || cfg.earnings.length === 0)
+        && (!cfg.deductions || cfg.deductions.length === 0);
+
+      if (isEmpty) {
+        const auto = autoConfigurePayslip(headers);
+        data.clients[clientIdx].payslipConfig = auto.payslipConfig;
+        data.clients[clientIdx].amountColumns = auto.amountColumns;
+      }
     }
   }
 
@@ -130,14 +127,18 @@ export function createOrUpdatePayrollMonth(clientId, month, employees, headers) 
   );
 
   if (payrollMonth) {
-    // Remove existing employees for this month
+    // Remove existing employees for this month and update headers
     data.employees = data.employees.filter(e => e.payrollMonthId !== payrollMonth.id);
+    if (headers && headers.length > 0) {
+      payrollMonth.headers = headers;
+    }
   } else {
     // Create new payroll month
     payrollMonth = {
       id: genId(),
       clientId,
       month,
+      headers: headers || [],
       createdAt: new Date().toISOString(),
     };
     data.payrollMonths.push(payrollMonth);
